@@ -21,6 +21,9 @@
     <ClInclude Include="fileFormat.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="unorm.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">

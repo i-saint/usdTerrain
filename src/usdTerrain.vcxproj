@@ -65,7 +65,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <AdditionalDependencies>usd_ar.lib;usd_arch.lib;usd_tf.lib;usd_vt.lib;usd_sdf.lib;usd_pcp.lib;usd_usd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>usd_ar.lib;usd_arch.lib;usd_tf.lib;usd_vt.lib;usd_gf.lib;usd_sdf.lib;usd_pcp.lib;usd_usd.lib;usd_hio.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(ProjectDir)vcpkg_installed\x64-windows\x64-windows\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <Manifest>
@@ -90,7 +90,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <AdditionalDependencies>usd_ar.lib;usd_arch.lib;usd_tf.lib;usd_vt.lib;usd_sdf.lib;usd_pcp.lib;usd_usd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>usd_ar.lib;usd_arch.lib;usd_tf.lib;usd_vt.lib;usd_gf.lib;usd_sdf.lib;usd_pcp.lib;usd_usd.lib;usd_hio.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(ProjectDir)vcpkg_installed\x64-windows\x64-windows\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <Manifest>
@@ -100,6 +100,7 @@
   <ItemGroup>
     <ClInclude Include="fileFormat.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="unorm.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="fileFormat.cpp" />

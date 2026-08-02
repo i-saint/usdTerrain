@@ -9,19 +9,21 @@ PXR_NAMESPACE_OPEN_SCOPE
     ((Extension, "usdterrain"))             \
     ((Params, "UsdTerrainParams"))          \
     ((MapFile, "mapFile"))                  \
-    ((Width, "width"))                      \
-    ((Height, "height"))                    \
     ((XDiv, "xDiv"))                        \
     ((YDiv, "yDiv"))                        \
+    ((XSize, "xSize"))                      \
+    ((YSize, "ySize"))                      \
+    ((MaxHeight, "maxHeight"))              \
     ((MaxLodLevel, "maxLodLevel"))          \
     ((DefaultLodLevel, "defaultLodLevel"))  \
 
 #define USD_TERRAIN_PARAMS_EACH(Body)   \
     Body(MapFile, std::string, "")      \
-    Body(Width, float, 1.0f)            \
-    Body(Height, float, 1.0f)           \
     Body(XDiv, int, -1)                 \
     Body(YDiv, int, -1)                 \
+    Body(XSize, float, 1.0f)            \
+    Body(YSize, float, 1.0f)            \
+    Body(MaxHeight, float, 1.0f)        \
     Body(MaxLodLevel, int, 4)           \
     Body(DefaultLodLevel, int, 0)       \
 
