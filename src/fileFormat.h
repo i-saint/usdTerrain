@@ -2,18 +2,34 @@
 
 PXR_NAMESPACE_OPEN_SCOPE
 
-#define USD_DANCING_CUBES_EXAMPLE_FILE_FORMAT_TOKENS\
-    ((Id, "usdTerrain"))            \
-    ((Version, "1.0"))              \
-    ((Target, "usd"))               \
-    ((Extension, "usdterrain"))     \
-    ((Params, "UsdTerrainParams")) 
+#define USD_TERRAIN_FILE_FORMAT_TOKENS      \
+    ((Id, "usdTerrain"))                    \
+    ((Version, "1.0"))                      \
+    ((Target, "usd"))                       \
+    ((Extension, "usdterrain"))             \
+    ((Params, "UsdTerrainParams"))          \
+    ((MapFile, "mapFile"))                  \
+    ((Width, "width"))                      \
+    ((Height, "height"))                    \
+    ((XDiv, "xDiv"))                        \
+    ((YDiv, "yDiv"))                        \
+    ((MaxLodLevel, "maxLodLevel"))          \
+    ((DefaultLodLevel, "defaultLodLevel"))  \
+
+#define USD_TERRAIN_PARAMS_EACH(Body)   \
+    Body(MapFile, std::string, "")      \
+    Body(Width, float, 1.0f)            \
+    Body(Height, float, 1.0f)           \
+    Body(XDiv, int, -1)                 \
+    Body(YDiv, int, -1)                 \
+    Body(MaxLodLevel, int, 4)           \
+    Body(DefaultLodLevel, int, 0)       \
 
 TF_DECLARE_PUBLIC_TOKENS(UsdTerrainFileFormatTokens,
-    USD_DANCING_CUBES_EXAMPLE_FILE_FORMAT_TOKENS);
+    USD_TERRAIN_FILE_FORMAT_TOKENS);
 
 
-class UsdTerrainFileFormat final  : public SdfFileFormat, public PcpDynamicFileFormatInterface
+class UsdTerrainFileFormat final : public SdfFileFormat, public PcpDynamicFileFormatInterface
 {
 public:
     UsdTerrainFileFormat();
