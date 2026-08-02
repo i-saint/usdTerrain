@@ -22,6 +22,12 @@
 #include <pxr/base/gf/vec4f.h>
 #include <pxr/usd/sdf/fileFormat.h>
 #include <pxr/usd/sdf/layer.h>
+#include <pxr/usd/sdf/primSpec.h>
+#include <pxr/usd/sdf/attributeSpec.h>
+#include <pxr/usd/sdf/variantSpec.h>
+#include <pxr/usd/sdf/variantSetSpec.h>
 #include <pxr/usd/pcp/dynamicFileFormatInterface.h>
 #include <pxr/imaging/hio/image.h>
+#include <pxr/usd/usdGeom/tokens.h>
+#include <pxr/usd/usdShade/tokens.h>
 #pragma warning(pop)

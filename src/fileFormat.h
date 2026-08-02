@@ -21,9 +21,9 @@ PXR_NAMESPACE_OPEN_SCOPE
     Body(MapFile, std::string, "")      \
     Body(XDiv, int, -1)                 \
     Body(YDiv, int, -1)                 \
-    Body(XSize, float, 1.0f)            \
-    Body(YSize, float, 1.0f)            \
-    Body(MaxHeight, float, 1.0f)        \
+    Body(XSize, float, 100.0f)            \
+    Body(YSize, float, 100.0f)            \
+    Body(MaxHeight, float, 10.0f)        \
     Body(MaxLodLevel, int, 4)           \
     Body(DefaultLodLevel, int, 0)       \
 

@@ -61,8 +61,8 @@ inline std::optional<T> Lookup(const SdfFileFormat::FileFormatArguments& args, c
     return std::nullopt;
 }
 
-template<class FloatT>
-inline float SampleHeight(std::span<const FloatT> image, int width, int height, float u, float v)
+template<class DstT, class SrcT>
+inline DstT SampleBilinear(std::span<const SrcT> image, int width, int height, float u, float v)
 {
     float fx = u * (width - 1);
     float fy = v * (height - 1);
@@ -74,13 +74,13 @@ inline float SampleHeight(std::span<const FloatT> image, int width, int height, 
 
     float tx = fx - x0;
     float ty = fy - y0;
-    float h00 = image[y0 * width + x0];
-    float h10 = image[y0 * width + x1];
-    float h01 = image[y1 * width + x0];
-    float h11 = image[y1 * width + x1];
-    float h0 = h00 * (1.0f - tx) + h10 * tx;
-    float h1 = h01 * (1.0f - tx) + h11 * tx;
-    float h = h0 * (1.0f - ty) + h1 * ty;
+    DstT h00 = image[y0 * width + x0];
+    DstT h10 = image[y0 * width + x1];
+    DstT h01 = image[y1 * width + x0];
+    DstT h11 = image[y1 * width + x1];
+    DstT h0 = h00 * (1.0f - tx) + h10 * tx;
+    DstT h1 = h01 * (1.0f - tx) + h11 * tx;
+    DstT h = h0 * (1.0f - ty) + h1 * ty;
     return h;
 }
 #pragma endregion Utils
@@ -91,8 +91,9 @@ inline float SampleHeight(std::span<const FloatT> image, int width, int height, 
 class UsdTerrainGenerator
 {
 public:
-    struct Params
+    class Params
     {
+    public:
 #define Body(name, type, defaultValue) type name = defaultValue;
         USD_TERRAIN_PARAMS_EACH(Body);
 #undef Body
@@ -100,32 +101,36 @@ public:
         void Parse(const SdfFileFormat::FileFormatArguments& args);
     };
 
-    struct MeshData
+    class MeshData
     {
+    public:
         VtArray<int> counts;
         VtArray<int> indices;
         VtArray<GfVec3f> vertices;
         VtArray<GfVec3f> normals;
         VtArray<GfVec2f> uvs;
 
-        bool generate(const HioImage::StorageSpec& image, const Params& params, int xdiv, int ydiv);
+        bool Generate(const HioImage::StorageSpec& image, const Params& params, int xdiv, int ydiv);
+
+    private:
         template<class SamplerT>
-        bool generate(SamplerT sampler, const Params& params, int xdiv, int ydiv);
+        bool Pass1(SamplerT sampler, const Params& params, int xdiv, int ydiv);
+        bool Pass2(const Params& params, int xdiv, int ydiv);
     };
 
     UsdTerrainGenerator(SdfLayer* layer);
-    bool generate();
+    bool Generate();
 
 private:
     SdfLayer* _layer = nullptr;
     Params _params;
-    std::vector<MeshData> _meshes;
 };
+
 
 
 void UsdTerrainGenerator::Params::Parse(const SdfFileFormat::FileFormatArguments& args)
 {
-#define Body(name, type, defaultValue) if (auto value = Lookup<type>(args, UsdTerrainFileFormatTokens->name)) { name = *value; }
+#define Body(name, type, _) if (auto value = Lookup<type>(args, UsdTerrainFileFormatTokens->name)) { name = *value; }
     USD_TERRAIN_PARAMS_EACH(Body);
 #undef Body
     MaxLodLevel = std::max(1, MaxLodLevel);
@@ -133,58 +138,56 @@ void UsdTerrainGenerator::Params::Parse(const SdfFileFormat::FileFormatArguments
 }
 
 
-template<class FloatT>
-struct Sampler
+template<class DstT, class SrcT>
+class Sampler
 {
-    Sampler(const void* image, int width, int height)
-        : _image(static_cast<const FloatT*>(image), width * height), _width(width), _height(height) {}
+public:
+    Sampler(const HioImage::StorageSpec& image)
+        : _image(static_cast<const SrcT*>(image.data), image.width* image.height), _width(image.width), _height(image.height) {}
 
     float operator()(float u, float v) const
     {
-        return SampleHeight(_image, _width, _height, u, v);
+        return SampleBilinear<DstT>(_image, _width, _height, u, v);
     }
 
 private:
-    std::span<const FloatT> _image;
+    std::span<const SrcT> _image;
     int _width;
     int _height;
 };
 
-bool UsdTerrainGenerator::MeshData::generate(const HioImage::StorageSpec& image, const Params& params, int xdiv, int ydiv)
+bool UsdTerrainGenerator::MeshData::Generate(const HioImage::StorageSpec& image, const Params& params, int xdiv, int ydiv)
 {
-    if (image.format == HioFormatUNorm8 || image.format == HioFormatSNorm8) {
-        auto sampler = Sampler<Unorm8>(image.data, image.width, image.height);
-        return generate(sampler, params, xdiv, ydiv);
+    bool success = false;
+    if (image.format == HioFormatUNorm8 || image.format == HioFormatSNorm8 || image.format == HioFormatUNorm8srgb) {
+        success = Pass1(Sampler<float, Unorm8>(image), params, xdiv, ydiv);
     }
     else if (image.format == HioFormatUInt16) {
-        auto sampler = Sampler<Unorm16>(image.data, image.width, image.height);
-        return generate(sampler, params, xdiv, ydiv);
+        success = Pass1(Sampler<float, Unorm16>(image), params, xdiv, ydiv);
     }
     else if (image.format == HioFormatFloat16) {
-        auto sampler = Sampler<GfHalf>(image.data, image.width, image.height);
-        return generate(sampler, params, xdiv, ydiv);
+        success = Pass1(Sampler<float, GfHalf>(image), params, xdiv, ydiv);
     }
     else if (image.format == HioFormatFloat32) {
-        auto sampler = Sampler<float>(image.data, image.width, image.height);
-        return generate(sampler, params, xdiv, ydiv);
+        success = Pass1(Sampler<float, float>(image), params, xdiv, ydiv);
     }
     else {
         TF_WARN("Unsupported image format: %s", TfEnum::GetName(image.format).c_str());
-        return false;
+        success = false;
     }
+
+    if (success) {
+        success = Pass2(params, xdiv, ydiv);
+    }
+    return success;
 }
 
 template<class SamplerT>
-bool UsdTerrainGenerator::MeshData::generate(SamplerT sampler, const Params& params, int xdiv, int ydiv)
+bool UsdTerrainGenerator::MeshData::Pass1(SamplerT sampler, const Params& params, int xdiv, int ydiv)
 {
-    const int numVertices = xdiv * ydiv;
-    const int numQuads = (xdiv - 1) * (ydiv - 1);
-    const int numIndices = numQuads * 6;
+    int numVertices = xdiv * ydiv;
     vertices.resize(numVertices);
-    normals.resize(numVertices);
     uvs.resize(numVertices);
-    counts.resize(numQuads, 4);
-    indices.resize(numIndices);
 
     float dx = params.XSize / (xdiv - 1);
     float dy = params.YSize / (ydiv - 1);
@@ -201,6 +204,17 @@ bool UsdTerrainGenerator::MeshData::generate(SamplerT sampler, const Params& par
             uvs[j * xdiv + i] = GfVec2f(u, v);
         }
     }
+    return true;
+}
+
+bool UsdTerrainGenerator::MeshData::Pass2(const Params& params, int xdiv, int ydiv)
+{
+    int numVertices = xdiv * ydiv;
+    int numQuads = (xdiv - 1) * (ydiv - 1);
+    int numIndices = numQuads * 6;
+    counts.resize(numQuads * 2, 3);
+    indices.resize(numIndices);
+    normals.resize(numVertices);
 
     for (int j = 0; j < ydiv; ++j) {
         for (int i = 0; i < xdiv; ++i) {
@@ -249,7 +263,7 @@ UsdTerrainGenerator::UsdTerrainGenerator(SdfLayer* layer)
     _params.Parse(layer->GetFileFormatArguments());
 }
 
-bool UsdTerrainGenerator::generate()
+bool UsdTerrainGenerator::Generate()
 {
     auto image = HioImage::OpenForReading(_params.MapFile);
     if (!image) {
@@ -278,19 +292,52 @@ bool UsdTerrainGenerator::generate()
         _params.YDiv = image->GetHeight();
     }
 
-    _meshes.resize(_params.MaxLodLevel);
-    for (int lod = 0; lod < _params.MaxLodLevel; ++lod) {
-        int xdiv = std::max(2, _params.XDiv >> lod);
-        int ydiv = std::max(2, _params.YDiv >> lod);
+    auto rootPrim = SdfPrimSpec::New(_layer->GetPseudoRoot(), "Root", SdfSpecifierDef);
+    auto geomPrim = SdfPrimSpec::New(rootPrim, "Geom", SdfSpecifierDef);
+    auto lodSet = SdfVariantSetSpec::New(geomPrim, "lod");
+
+    for (int l = 0; l < _params.MaxLodLevel; ++l) {
+        int xdiv = std::max(2, _params.XDiv >> l);
+        int ydiv = std::max(2, _params.YDiv >> l);
         if (xdiv < 2 || ydiv < 2) {
-            _meshes.resize(lod);
+            _params.MaxLodLevel = l;
+            _params.DefaultLodLevel = std::min(_params.DefaultLodLevel, l - 1);
             break;
         }
-        if (!_meshes[lod].generate(imageData, _params, xdiv, ydiv)) {
-            TF_WARN("Failed to generate mesh for LOD %d", lod);
+
+        MeshData meshData;
+        if (!meshData.Generate(imageData, _params, xdiv, ydiv)) {
+            TF_WARN("Failed to generate mesh for LOD %d", l);
             return false;
         }
+
+        auto lodToken = TfToken(std::format("LOD{}", l));
+        geomPrim->GetVariantSetNameList().Add(lodToken);
+        auto lodVariant = SdfVariantSpec::New(lodSet, lodToken);
+        auto lodPrim = SdfPrimSpec::New(lodVariant->GetPrimSpec(), lodToken, SdfSpecifierDef);
+        auto meshPrim = SdfPrimSpec::New(lodPrim, "Mesh", SdfSpecifierDef, "Mesh");
+
+        if (auto countsAttr = SdfAttributeSpec::New(meshPrim, UsdGeomTokens->faceVertexCounts, SdfValueTypeNames->IntArray)) {
+            countsAttr->SetDefaultValue(VtValue(meshData.counts));
+        }
+        if (auto indicesAttr = SdfAttributeSpec::New(meshPrim, UsdGeomTokens->faceVertexIndices, SdfValueTypeNames->IntArray)) {
+            indicesAttr->SetDefaultValue(VtValue(meshData.indices));
+        }
+        if (auto pointsAttr = SdfAttributeSpec::New(meshPrim, UsdGeomTokens->points, SdfValueTypeNames->Point3fArray)) {
+            pointsAttr->SetDefaultValue(VtValue(meshData.vertices));
+        }
+        if (auto normalsAttr = SdfAttributeSpec::New(meshPrim, UsdGeomTokens->normals, SdfValueTypeNames->Normal3fArray)) {
+            normalsAttr->SetDefaultValue(VtValue(meshData.normals));
+        }
+        if (auto uvsAttr = SdfAttributeSpec::New(meshPrim, TfToken("primvars:st"), SdfValueTypeNames->TexCoord2fArray)) {
+            uvsAttr->SetDefaultValue(VtValue(meshData.uvs));
+        }
+        if (auto subdivAttr = SdfAttributeSpec::New(meshPrim, UsdGeomTokens->subdivisionScheme, SdfValueTypeNames->Token)) {
+            subdivAttr->SetDefaultValue(VtValue(UsdGeomTokens->none));
+        }
     }
+
+    geomPrim->SetVariantSelection("lod", std::format("LOD{}", _params.DefaultLodLevel));
 
     return true;
 }
@@ -319,7 +366,7 @@ bool UsdTerrainFileFormat::CanRead(const std::string& file) const
 bool UsdTerrainFileFormat::Read(SdfLayer* layer, const std::string& resolvedPath, bool metadataOnly) const
 {
     UsdTerrainGenerator generator(layer);
-    return generator.generate();
+    return generator.Generate();
 }
 
 bool UsdTerrainFileFormat::WriteToString(const SdfLayer& layer, std::string* str, const std::string& comment) const
@@ -355,7 +402,35 @@ bool UsdTerrainFileFormat::CanFieldChangeAffectFileFormatArguments(
     const VtValue& newValue,
     const VtValue& contextDependencyData) const
 {
-    return false;
+    if (!oldValue.IsHolding<VtDictionary>() || !newValue.IsHolding<VtDictionary>())
+        return false;
+
+    auto& oldDict = oldValue.UncheckedGet<VtDictionary>();
+    auto& newDict = newValue.UncheckedGet<VtDictionary>();
+    auto oldIt = oldDict.find(field);
+    auto newIt = newDict.find(field);
+    if (oldIt == oldDict.end() && newIt == newDict.end()) {
+        return false;
+    }
+
+    auto check = [&](const auto& defaultValue) -> bool {
+        using T = std::decay_t<decltype(defaultValue)>;
+        T oldVal = defaultValue;
+        T newVal = defaultValue;
+        if (oldIt->second.IsHolding<T>()) {
+            oldVal = oldIt->second.UncheckedGet<T>();
+        }
+        if (newIt->second.IsHolding<T>()) {
+            newVal = newIt->second.UncheckedGet<T>();
+        }
+        return oldVal != newVal;
+        };
+
+#define Body(name, type, defaultValue) if (field == UsdTerrainFileFormatTokens->name) { return check(type(defaultValue)); }
+    USD_TERRAIN_PARAMS_EACH(Body)
+#undef Body
+
+        return false;
 }
 
 #pragma endregion UsdTerrainFileFormat
