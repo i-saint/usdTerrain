@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -17,6 +18,9 @@
 #include <pxr/base/vt/dictionary.h>
 #include <pxr/base/vt/value.h>
 #include <pxr/base/gf/half.h>
+#include <pxr/base/gf/vec2h.h>
+#include <pxr/base/gf/vec3h.h>
+#include <pxr/base/gf/vec4h.h>
 #include <pxr/base/gf/vec2f.h>
 #include <pxr/base/gf/vec3f.h>
 #include <pxr/base/gf/vec4f.h>

@@ -11,13 +11,13 @@ public:
     uint8_t value;
 };
 
-class Unorm16
+class Snorm8
 {
 public:
-    Unorm16() : value(0) {}
-    Unorm16(float f) : value(static_cast<uint16_t>(std::clamp(f, 0.0f, 1.0f) * 65535.0f)) {}
-    operator float() const { return static_cast<float>(value) / 65535.0f; }
-    uint16_t value;
+    Snorm8() : value(0) {}
+    Snorm8(float f) : value(static_cast<int8_t>(std::clamp(f, -1.0f, 1.0f) * 127.0f)) {}
+    operator float() const { return static_cast<float>(value) / 127.0f; }
+    int8_t value;
 };
 
 
@@ -60,9 +60,23 @@ public:
 using Vec2Unorm8 = TVec2Unorm<Unorm8>;
 using Vec3Unorm8 = TVec3Unorm<Unorm8>;
 using Vec4Unorm8 = TVec4Unorm<Unorm8>;
-using Vec2Unorm16 = TVec2Unorm<Unorm16>;
-using Vec3Unorm16 = TVec3Unorm<Unorm16>;
-using Vec4Unorm16 = TVec4Unorm<Unorm16>;
+using Vec2Snorm8 = TVec2Unorm<Snorm8>;
+using Vec3Snorm8 = TVec3Unorm<Snorm8>;
+using Vec4Snorm8 = TVec4Unorm<Snorm8>;
 
+
+template<class T> inline constexpr size_t VecSize = 0;
+template<> inline constexpr size_t VecSize<Vec2Unorm8> = 2;
+template<> inline constexpr size_t VecSize<Vec3Unorm8> = 3;
+template<> inline constexpr size_t VecSize<Vec4Unorm8> = 4;
+template<> inline constexpr size_t VecSize<Vec2Snorm8> = 2;
+template<> inline constexpr size_t VecSize<Vec3Snorm8> = 3;
+template<> inline constexpr size_t VecSize<Vec4Snorm8> = 4;
+template<> inline constexpr size_t VecSize<GfVec2h> = 2;
+template<> inline constexpr size_t VecSize<GfVec3h> = 3;
+template<> inline constexpr size_t VecSize<GfVec4h> = 4;
+template<> inline constexpr size_t VecSize<GfVec2f> = 2;
+template<> inline constexpr size_t VecSize<GfVec3f> = 3;
+template<> inline constexpr size_t VecSize<GfVec4f> = 4;
 
 PXR_NAMESPACE_CLOSE_SCOPE

@@ -13,19 +13,25 @@ PXR_NAMESPACE_OPEN_SCOPE
     ((YDiv, "yDiv"))                        \
     ((XSize, "xSize"))                      \
     ((YSize, "ySize"))                      \
+    ((MaxXRange, "maxXRange"))              \
+    ((MaxYRange, "maxYRange"))              \
     ((MaxHeight, "maxHeight"))              \
     ((MaxLodLevel, "maxLodLevel"))          \
     ((DefaultLodLevel, "defaultLodLevel"))  \
+    ((LodShift, "lodShift"))                \
 
 #define USD_TERRAIN_PARAMS_EACH(Body)   \
     Body(MapFile, std::string, "")      \
     Body(XDiv, int, -1)                 \
     Body(YDiv, int, -1)                 \
-    Body(XSize, float, 100.0f)            \
-    Body(YSize, float, 100.0f)            \
-    Body(MaxHeight, float, 10.0f)        \
+    Body(XSize, float, 100.0f)          \
+    Body(YSize, float, 100.0f)          \
+    Body(MaxXRange, float, 10.0f)       \
+    Body(MaxYRange, float, 10.0f)       \
+    Body(MaxHeight, float, 10.0f)       \
     Body(MaxLodLevel, int, 4)           \
     Body(DefaultLodLevel, int, 0)       \
+    Body(LodShift, int, 2)              \
 
 TF_DECLARE_PUBLIC_TOKENS(UsdTerrainFileFormatTokens,
     USD_TERRAIN_FILE_FORMAT_TOKENS);

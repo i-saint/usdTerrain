@@ -61,27 +61,24 @@ inline std::optional<T> Lookup(const SdfFileFormat::FileFormatArguments& args, c
     return std::nullopt;
 }
 
-template<class DstT, class SrcT>
-inline DstT SampleBilinear(std::span<const SrcT> image, int width, int height, float u, float v)
+template<class To, class From>
+struct DefaultConverter
 {
-    float fx = u * (width - 1);
-    float fy = v * (height - 1);
+    To operator()(const From& value) const
+    {
+        return static_cast<To>(value);
+    }
+};
 
-    int x0 = static_cast<int>(fx);
-    int y0 = static_cast<int>(fy);
-    int x1 = std::min(x0 + 1, width - 1);
-    int y1 = std::min(y0 + 1, height - 1);
-
-    float tx = fx - x0;
-    float ty = fy - y0;
-    DstT h00 = image[y0 * width + x0];
-    DstT h10 = image[y0 * width + x1];
-    DstT h01 = image[y1 * width + x0];
-    DstT h11 = image[y1 * width + x1];
-    DstT h0 = h00 * (1.0f - tx) + h10 * tx;
-    DstT h1 = h01 * (1.0f - tx) + h11 * tx;
-    DstT h = h0 * (1.0f - ty) + h1 * ty;
-    return h;
+template<class To, class From, class Converter = DefaultConverter<To, From>>
+inline VtArray<To> ConvertArray(std::span<const From> array, Converter&& converter = Converter())
+{
+    VtArray<To> result(array.size());
+    To* dst = result.data();
+    for (size_t i = 0; i < array.size(); ++i) {
+        dst[i] = converter(array[i]);
+    }
+    return result;
 }
 #pragma endregion Utils
 
@@ -133,25 +130,80 @@ void UsdTerrainGenerator::Params::Parse(const SdfFileFormat::FileFormatArguments
 #define Body(name, type, _) if (auto value = Lookup<type>(args, UsdTerrainFileFormatTokens->name)) { name = *value; }
     USD_TERRAIN_PARAMS_EACH(Body);
 #undef Body
+
     MaxLodLevel = std::max(1, MaxLodLevel);
     DefaultLodLevel = std::clamp(DefaultLodLevel, 0, MaxLodLevel - 1);
+    LodShift = std::clamp(LodShift, 1, 8);
 }
 
-
-template<class DstT, class SrcT>
-class Sampler
+template<class T>
+class PointSampler
 {
 public:
-    Sampler(const HioImage::StorageSpec& image)
-        : _image(static_cast<const SrcT*>(image.data), image.width* image.height), _width(image.width), _height(image.height) {}
+    using ValueType = T;
 
-    float operator()(float u, float v) const
+    template<class U>
+    static PointSampler<T> Create(const HioImage::StorageSpec& image)
     {
-        return SampleBilinear<DstT>(_image, _width, _height, u, v);
+        return PointSampler<T>(ConvertArray<T>(std::span<const U>(static_cast<const U*>(image.data), image.width * image.height)), image.width, image.height);
+    }
+
+    template<class U>
+    PointSampler(VtArray<T> image, int width, int height)
+        : _image(std::move(image)), _width(width), _height(height) {}
+
+    T operator()(float u, float v) const
+    {
+        int x = std::clamp(static_cast<int>(u * _width), 0, _width - 1);
+        int y = std::clamp(static_cast<int>(v * _height), 0, _height - 1);
+        return _image[y * _width + x];
     }
 
 private:
-    std::span<const SrcT> _image;
+    const VtArray<T> _image;
+    int _width;
+    int _height;
+};
+
+template<class T>
+class BilinearSampler
+{
+public:
+    using ValueType = T;
+
+    template<class U>
+    static BilinearSampler<T> Create(const HioImage::StorageSpec& image)
+    {
+        return BilinearSampler<T>(ConvertArray<T>(std::span<const U>(static_cast<const U*>(image.data), image.width* image.height)), image.width, image.height);
+    }
+
+    BilinearSampler(VtArray<T> image, int width, int height)
+        : _image(std::move(image)), _width(width), _height(height) {}
+
+    T operator()(float u, float v) const
+    {
+        float fx = u * (_width - 1);
+        float fy = v * (_height - 1);
+
+        int x0 = static_cast<int>(fx);
+        int y0 = static_cast<int>(fy);
+        int x1 = std::min(x0 + 1, _width - 1);
+        int y1 = std::min(y0 + 1, _height - 1);
+
+        float tx = fx - x0;
+        float ty = fy - y0;
+        T h00 = _image[y0 * _width + x0];
+        T h10 = _image[y0 * _width + x1];
+        T h01 = _image[y1 * _width + x0];
+        T h11 = _image[y1 * _width + x1];
+        T h0 = h00 * (1.0f - tx) + h10 * tx;
+        T h1 = h01 * (1.0f - tx) + h11 * tx;
+        T h = h0 * (1.0f - ty) + h1 * ty;
+        return h;
+    }
+
+private:
+    const VtArray<T> _image;
     int _width;
     int _height;
 };
@@ -159,18 +211,33 @@ private:
 bool UsdTerrainGenerator::MeshData::Generate(const HioImage::StorageSpec& image, const Params& params, int xdiv, int ydiv)
 {
     bool success = false;
-    if (image.format == HioFormatUNorm8 || image.format == HioFormatSNorm8 || image.format == HioFormatUNorm8srgb) {
-        success = Pass1(Sampler<float, Unorm8>(image), params, xdiv, ydiv);
+
+    if (image.format == HioFormatUNorm8 || image.format == HioFormatUNorm8srgb) {
+        success = Pass1(BilinearSampler<float>::Create<Unorm8>(image), params, xdiv, ydiv);
     }
-    else if (image.format == HioFormatUInt16) {
-        success = Pass1(Sampler<float, Unorm16>(image), params, xdiv, ydiv);
+    else if (image.format == HioFormatSNorm8) {
+        success = Pass1(BilinearSampler<float>::Create<Snorm8>(image), params, xdiv, ydiv);
     }
     else if (image.format == HioFormatFloat16) {
-        success = Pass1(Sampler<float, GfHalf>(image), params, xdiv, ydiv);
+        success = Pass1(BilinearSampler<float>::Create<GfHalf>(image), params, xdiv, ydiv);
     }
     else if (image.format == HioFormatFloat32) {
-        success = Pass1(Sampler<float, float>(image), params, xdiv, ydiv);
+        success = Pass1(BilinearSampler<float>::Create<float>(image), params, xdiv, ydiv);
     }
+
+    else if (image.format == HioFormatUNorm8Vec3 || image.format == HioFormatUNorm8Vec3srgb) {
+        success = Pass1(BilinearSampler<GfVec3f>::Create<Vec3Unorm8>(image), params, xdiv, ydiv);
+    }
+    else if (image.format == HioFormatSNorm8Vec3) {
+        success = Pass1(BilinearSampler<GfVec3f>::Create<Vec3Snorm8>(image), params, xdiv, ydiv);
+    }
+    else if (image.format == HioFormatFloat16Vec3) {
+        success = Pass1(BilinearSampler<GfVec3f>::Create<GfVec3h>(image), params, xdiv, ydiv);
+    }
+    else if (image.format == HioFormatFloat32Vec3) {
+        success = Pass1(BilinearSampler<GfVec3f>::Create<GfVec3f>(image), params, xdiv, ydiv);
+    }
+
     else {
         TF_WARN("Unsupported image format: %s", TfEnum::GetName(image.format).c_str());
         success = false;
@@ -193,14 +260,26 @@ bool UsdTerrainGenerator::MeshData::Pass1(SamplerT sampler, const Params& params
     float dy = params.YSize / (ydiv - 1);
     float du = 1.0f / (xdiv - 1);
     float dv = 1.0f / (ydiv - 1);
+
+    float zRange = params.MaxHeight;
+    GfVec3f xyzRange(params.MaxXRange, params.MaxYRange, params.MaxHeight);
     for (int j = 0; j < ydiv; ++j) {
         for (int i = 0; i < xdiv; ++i) {
             float x = dx * i;
             float y = dy * j;
             float u = du * i;
             float v = dv * j;
-            float z = sampler(u, v) * params.MaxHeight;
-            vertices[j * xdiv + i] = GfVec3f(x, y, z);
+            if constexpr (VecSize<typename SamplerT::ValueType> == 0) {
+                auto z = sampler(u, v) * zRange;
+                vertices[j * xdiv + i] = GfVec3f(x, y, z);
+            }
+            else if constexpr (VecSize<typename SamplerT::ValueType> == 3) {
+                auto dir = GfCompMult(sampler(u, v), xyzRange);
+                vertices[j * xdiv + i] = GfVec3f(x, y, 0.0f) + dir;
+            }
+            else {
+                static_assert(VecSize<typename SamplerT::ValueType> == 0, "Unsupported sampler value type");
+            }
             uvs[j * xdiv + i] = GfVec2f(u, v);
         }
     }
@@ -297,8 +376,8 @@ bool UsdTerrainGenerator::Generate()
     auto lodSet = SdfVariantSetSpec::New(geomPrim, "lod");
 
     for (int l = 0; l < _params.MaxLodLevel; ++l) {
-        int xdiv = std::max(2, _params.XDiv >> l);
-        int ydiv = std::max(2, _params.YDiv >> l);
+        int xdiv = std::max(2, _params.XDiv >> (_params.LodShift * l));
+        int ydiv = std::max(2, _params.YDiv >> (_params.LodShift * l));
         if (xdiv < 2 || ydiv < 2) {
             _params.MaxLodLevel = l;
             _params.DefaultLodLevel = std::min(_params.DefaultLodLevel, l - 1);
