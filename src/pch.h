@@ -35,3 +35,7 @@
 #include <pxr/usd/usdGeom/tokens.h>
 #include <pxr/usd/usdShade/tokens.h>
 #pragma warning(pop)
+
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>

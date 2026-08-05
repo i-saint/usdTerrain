@@ -80,6 +80,44 @@ inline VtArray<To> ConvertArray(std::span<const From> array, Converter&& convert
     }
     return result;
 }
+
+static bool ReadFileToString(const std::string& path, std::string& dst)
+{
+    HANDLE hFile = ::CreateFileA(
+        path.c_str(),
+        GENERIC_READ,
+        FILE_SHARE_READ,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    LARGE_INTEGER fileSize{};
+    if (!::GetFileSizeEx(hFile, &fileSize)) {
+        ::CloseHandle(hFile);
+        return false;
+    }
+
+    dst.resize(static_cast<size_t>(fileSize.QuadPart));
+    constexpr DWORD kChunkSize = 0x80000000u; // 2GB
+    size_t totalRead = 0;
+    while (totalRead < dst.size()) {
+        DWORD toRead = static_cast<DWORD>(std::min<size_t>(dst.size() - totalRead, kChunkSize));
+        DWORD bytesRead = 0;
+        if (!::ReadFile(hFile, dst.data() + totalRead, toRead, &bytesRead, nullptr) || bytesRead == 0) {
+            ::CloseHandle(hFile);
+            return false;
+        }
+        totalRead += bytesRead;
+    }
+    dst.resize(totalRead);
+
+    ::CloseHandle(hFile);
+    return true;
+}
 #pragma endregion Utils
 
 
@@ -252,6 +290,8 @@ bool UsdTerrainGenerator::MeshData::Generate(const HioImage::StorageSpec& image,
 template<class SamplerT>
 bool UsdTerrainGenerator::MeshData::Pass1(SamplerT sampler, const Params& params, int xdiv, int ydiv)
 {
+    using ValueType = typename SamplerT::ValueType;
+
     int numVertices = xdiv * ydiv;
     vertices.resize(numVertices);
     uvs.resize(numVertices);
@@ -269,16 +309,16 @@ bool UsdTerrainGenerator::MeshData::Pass1(SamplerT sampler, const Params& params
             float y = dy * j;
             float u = du * i;
             float v = dv * j;
-            if constexpr (VecSize<typename SamplerT::ValueType> == 0) {
+            if constexpr (VecSize<ValueType> == 0) {
                 auto z = sampler(u, v) * zRange;
                 vertices[j * xdiv + i] = GfVec3f(x, y, z);
             }
-            else if constexpr (VecSize<typename SamplerT::ValueType> == 3) {
+            else if constexpr (VecSize<ValueType> == 3) {
                 auto dir = GfCompMult(sampler(u, v), xyzRange);
                 vertices[j * xdiv + i] = GfVec3f(x, y, 0.0f) + dir;
             }
             else {
-                static_assert(VecSize<typename SamplerT::ValueType> == 0, "Unsupported sampler value type");
+                static_assert(VecSize<ValueType> == 0, "Unsupported sampler value type");
             }
             uvs[j * xdiv + i] = GfVec2f(u, v);
         }
