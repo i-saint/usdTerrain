@@ -24,12 +24,21 @@
     <ClInclude Include="unorm.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="GPGPU.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GPGPU_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="fileFormat.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GPGPU_D3D12.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
