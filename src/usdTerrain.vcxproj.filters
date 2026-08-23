@@ -41,6 +41,9 @@
     <ClCompile Include="GPGPU_D3D12.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="GPGPU_D3D11.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="plugInfo.json">
