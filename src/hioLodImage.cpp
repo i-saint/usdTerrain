@@ -22,7 +22,7 @@ public:
     int GetBytesPerPixel() const override { return static_cast<int>(HioGetDataSizeOfFormat(_format)); }
     int GetNumMipLevels() const override { return 1; }
     bool IsColorSpaceSRGB() const override { return _isSRGB; }
-    bool GetMetadata(TfToken const&, VtValue*) const override;
+    bool GetMetadata(const TfToken& name, VtValue* value) const override;
     bool GetSamplerMetadata(HioAddressDimension, HioAddressMode*) const override;
 
 protected:
@@ -33,25 +33,23 @@ private:
     std::string _filename;
     int _width = 0;
     int _height = 0;
+    int _lod = 0;
     HioFormat _format = HioFormatInvalid;
     bool _isSRGB = false;
-    std::vector<uint8_t> _data;
+    std::vector<char> _data;
 };
 
 
 TF_REGISTRY_FUNCTION(TfType)
 {
     using Image = HioLodImage;
-    TfType t = TfType::Define<Image, TfType::Bases<Image::Base> >();
-    t.SetFactory< HioImageFactory<Image> >();
+    TfType t = TfType::Define<Image, TfType::Bases<Image::Base>>();
+    t.SetFactory<HioImageFactory<Image>>();
 }
 
 bool HioLodImage::Read(const StorageSpec& storage)
 {
-    if (!storage.data ||
-        storage.width != _width ||
-        storage.height != _height ||
-        storage.format != _format) {
+    if (!storage.data || storage.width != _width || storage.height != _height || storage.format != _format) {
         return false;
     }
 
@@ -81,8 +79,8 @@ bool HioLodImage::ReadCropped(int const cropTop, int const cropBottom, int const
     const size_t bytesPerPixel = HioGetDataSizeOfFormat(_format);
     const size_t srcRowBytes = _width * bytesPerPixel;
     const size_t dstRowBytes = croppedWidth * bytesPerPixel;
-    const uint8_t* srcBase = _data.data();
-    auto* dstBase = static_cast<uint8_t*>(storage.data);
+    const char* srcBase = _data.data();
+    auto* dstBase = static_cast<char*>(storage.data);
 
     for (int y = 0; y < croppedHeight; ++y) {
         const int srcY = cropTop + y;
@@ -98,8 +96,14 @@ bool HioLodImage::Write(StorageSpec const&, VtDictionary const&)
     return false;
 }
 
-bool HioLodImage::GetMetadata(TfToken const&, VtValue*) const
+bool HioLodImage::GetMetadata(const TfToken& name, VtValue* value) const
 {
+    if (name == "lod") {
+        if (value) {
+            *value = _lod;
+        }
+        return true;
+    }
     return false;
 }
 
@@ -108,7 +112,7 @@ bool HioLodImage::GetSamplerMetadata(HioAddressDimension, HioAddressMode*) const
     return false;
 }
 
-static bool GenLodImage(const HioImageSharedPtr& src, int mip, std::vector<uint8_t>& dstData, int& dstWidth, int& dstHeight);
+static bool GenLodImage(const HioImageSharedPtr& src, int lod, std::vector<char>& dstData, int& dstWidth, int& dstHeight);
 
 bool HioLodImage::_OpenForReading(const std::string& filename, int subimage, int mip, SourceColorSpace sourceColorSpace, bool suppressErrors)
 {
@@ -125,19 +129,18 @@ bool HioLodImage::_OpenForReading(const std::string& filename, int subimage, int
     }
 
     // クエリパラメータ解析
-    int lod = 0;
     std::string_view options = filename.substr(baseFilename.find_last_of('?'));
     {
         size_t pos = options.find("lod=");
         if (pos != std::string_view::npos) {
             size_t endPos = options.find('&', pos);
             std::string_view lodStr = options.substr(pos + 4, endPos - (pos + 4));
-            lod = std::stoi(std::string(lodStr));
+            _lod = std::stoi(std::string(lodStr));
         }
     }
 
     // 縮小イメージ生成
-    if (GenLodImage(srcImage, lod, _data, _width, _height)) {
+    if (GenLodImage(srcImage, _lod, _data, _width, _height)) {
         _filename = filename;
         _format = srcImage->GetFormat();
         _isSRGB = (sourceColorSpace == SourceColorSpace::SRGB);
@@ -185,7 +188,8 @@ template <int N, PixelElement T>
 static void DownsampleNxN(const T* src, int srcWidth, int srcHeight, int componentCount, T* dst, int dstWidth, int dstHeight)
 {
     if constexpr (N == 1) {
-        std::memcpy(dst, src, srcWidth * srcHeight * componentCount * sizeof(T));
+        size_t dataSize = srcWidth * srcHeight * componentCount * sizeof(T);
+        std::memcpy(dst, src, dataSize);
         return;
     }
     else {
@@ -220,20 +224,19 @@ static void DownsampleNxN(const T* src, int srcWidth, int srcHeight, int compone
 
 template <int N, PixelElement T>
     requires LodScale<N>
-static bool DownsampleTyped(const void* src, int srcWidth, int srcHeight, int componentCount, std::vector<uint8_t>& dstData, int& dstWidth, int& dstHeight)
+static bool DownsampleTyped(const void* src, int srcWidth, int srcHeight, int componentCount, std::vector<char>& dstData, int& dstWidth, int& dstHeight)
 {
     dstWidth = std::max(1, srcWidth / N);
     dstHeight = std::max(1, srcHeight / N);
-
-    size_t requiredSize = dstWidth * dstHeight * componentCount * sizeof(T);
-    dstData.resize(requiredSize);
+    size_t dstSize = dstWidth * dstHeight * componentCount * sizeof(T);
+    dstData.resize(dstSize);
 
     DownsampleNxN<N>(static_cast<const T*>(src), srcWidth, srcHeight, componentCount, reinterpret_cast<T*>(dstData.data()), dstWidth, dstHeight);
     return true;
 }
 
 template <int N>
-static bool DownsampleImage(HioFormat format, const void* src, int srcWidth, int srcHeight, std::vector<uint8_t>& dstData, int& dstWidth, int& dstHeight)
+static bool DownsampleImage(HioFormat format, const void* src, int srcWidth, int srcHeight, std::vector<char>& dstData, int& dstWidth, int& dstHeight)
 {
     if (HioIsCompressed(format)) {
         return false;
@@ -269,7 +272,7 @@ static bool DownsampleImage(HioFormat format, const void* src, int srcWidth, int
     }
 }
 
-static bool DownsampleImage(HioFormat format, const void* src, int srcWidth, int srcHeight, int lod, std::vector<uint8_t>& dstData, int& dstWidth, int& dstHeight)
+static bool DownsampleImage(HioFormat format, const void* src, int srcWidth, int srcHeight, int lod, std::vector<char>& dstData, int& dstWidth, int& dstHeight)
 {
     switch (lod) {
     case 0: return DownsampleImage<1>(format, src, srcWidth, srcHeight, dstData, dstWidth, dstHeight);
@@ -282,7 +285,7 @@ static bool DownsampleImage(HioFormat format, const void* src, int srcWidth, int
     }
 }
 
-static bool GenLodImage(const HioImageSharedPtr& src, int lod, std::vector<uint8_t>& dstData, int& dstWidth, int& dstHeight)
+static bool GenLodImage(const HioImageSharedPtr& src, int lod, std::vector<char>& dstData, int& dstWidth, int& dstHeight)
 {
     if (!src) {
         return false;
@@ -309,19 +312,19 @@ static bool GenLodImage(const HioImageSharedPtr& src, int lod, std::vector<uint8
         }
     }
 
-    size_t dataSize = src->GetWidth() * src->GetHeight() * HioGetDataSizeOfFormat(format);
-    std::vector<uint8_t> currentData(dataSize);
+    size_t srcSize = src->GetWidth() * src->GetHeight() * HioGetDataSizeOfFormat(format);
+    std::vector<char> srcData(srcSize);
 
-    HioImage::StorageSpec srcData;
-    srcData.width = src->GetWidth();
-    srcData.height = src->GetHeight();
-    srcData.depth = 1;
-    srcData.format = format;
-    srcData.data = currentData.data();
-    if (!src->Read(srcData)) {
+    HioImage::StorageSpec srcStorage;
+    srcStorage.width = src->GetWidth();
+    srcStorage.height = src->GetHeight();
+    srcStorage.depth = 1;
+    srcStorage.format = format;
+    srcStorage.data = srcData.data();
+    if (!src->Read(srcStorage)) {
         return false;
     }
 
-    return DownsampleImage(format, currentData.data(), srcData.width, srcData.height, lod, dstData, dstWidth, dstHeight);
+    return DownsampleImage(format, srcData.data(), srcStorage.width, srcStorage.height, lod, dstData, dstWidth, dstHeight);
 }
 
