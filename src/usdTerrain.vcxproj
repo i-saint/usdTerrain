@@ -85,6 +85,7 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <AdditionalOptions>/utf-8 /Zc:inline- %(AdditionalOptions)</AdditionalOptions>
       <RemoveUnreferencedCodeData>false</RemoveUnreferencedCodeData>
+      <AdditionalIncludeDirectories>$(SolutionDir)externals\ufbx;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -98,6 +99,8 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\externals\ufbx\ufbx.h" />
+    <ClInclude Include="fbxAnimation.h" />
     <ClInclude Include="fileFormat.h" />
     <ClInclude Include="GPGPU.h" />
     <ClInclude Include="GPGPU_internal.h" />
@@ -105,6 +108,10 @@
     <ClInclude Include="unorm.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\externals\ufbx\ufbx.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="fbxAnimation.cpp" />
     <ClCompile Include="fileFormat.cpp" />
     <ClCompile Include="hioLodImage.cpp" />
     <ClCompile Include="GPGPU_D3D11.cpp" />

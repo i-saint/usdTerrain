@@ -4,8 +4,6 @@
 #include <cstring>
 #include <utility>
 
-using namespace pxr;
-
 class HioLodImage final : public HioImage
 {
 public:
