@@ -35,6 +35,9 @@
     <ClInclude Include="unorm.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="meshUtils.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -59,6 +62,9 @@
       <Filter>externals</Filter>
     </ClCompile>
     <ClCompile Include="fbxAnimation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="meshUtils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
