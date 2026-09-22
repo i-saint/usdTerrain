@@ -21,4 +21,5 @@ struct MeshData
 };
 
 // 三角形化。output は indices と counts のみ出力される
+// line / point は無視される
 bool TriangulateMesh(const MeshData& input, MeshData& output);
