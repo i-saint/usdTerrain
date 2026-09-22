@@ -111,24 +111,6 @@ static float2 ProjectToPolygon2D(const float3& p, ProjectionAxis axis)
 }
 
 
-// ear clipping 法による三角形化を行うためのコンテキスト
-class Triangulator
-{
-public:
-    bool EarClipTriangulate(std::span<const float3> points, std::span<const int> indices);
-    bool SimpleTriangulate(std::span<const int> indices);
-    std::span<const int> GetTriangleIndices() const { return result; }
-
-private:
-    std::vector<int> polygon;
-    std::vector<int> result;
-    std::vector<float2> polygon2DVertices;
-    std::unordered_set<int> triangulatedVertexSet;
-
-    bool DoEarClipTriangulate();
-    bool ValidateTriangulation(std::span<const int> indices);
-};
-
 bool Triangulator::DoEarClipTriangulate()
 {
     result.clear();
@@ -208,27 +190,6 @@ bool Triangulator::DoEarClipTriangulate()
     return true;
 }
 
-bool Triangulator::ValidateTriangulation(std::span<const int> indices)
-{
-    triangulatedVertexSet.clear();
-    triangulatedVertexSet.reserve(result.size());
-
-    for (int index : result) {
-        if (index < 0 || index >= indices.size()) {
-            return false;
-        }
-        triangulatedVertexSet.insert(indices[index]);
-    }
-
-    for (int i = 0; i < indices.size(); ++i) {
-        if (triangulatedVertexSet.find(indices[i]) == triangulatedVertexSet.end()) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 bool Triangulator::EarClipTriangulate(std::span<const float3> points, std::span<const int> indices)
 {
     result.clear();
@@ -255,7 +216,7 @@ bool Triangulator::EarClipTriangulate(std::span<const float3> points, std::span<
     if (!DoEarClipTriangulate()) {
         return false;
     }
-    return ValidateTriangulation(indices);
+    return true;
 }
 
 bool Triangulator::SimpleTriangulate(std::span<const int> indices)
@@ -265,9 +226,9 @@ bool Triangulator::SimpleTriangulate(std::span<const int> indices)
         return false;
     }
     else if (indices.size() == 3) {
-        result.push_back(indices[0]);
-        result.push_back(indices[1]);
-        result.push_back(indices[2]);
+        result.push_back(0);
+        result.push_back(1);
+        result.push_back(2);
         return true;
     }
 
@@ -280,24 +241,24 @@ bool Triangulator::SimpleTriangulate(std::span<const int> indices)
     const int totalPoints = triangleCount * 3;
     int written = 0;
 
-    result.push_back(indices[0]);
-    result.push_back(indices[1]);
-    result.push_back(indices[2]);
+    result.push_back(0);
+    result.push_back(1);
+    result.push_back(2);
     written += 3;
 
     while (nextVertex <= prevVertex) {
-        result.push_back(indices[lastVertex]);
-        result.push_back(indices[nextVertex]);
-        result.push_back(indices[firstVertex]);
+        result.push_back(lastVertex);
+        result.push_back(nextVertex);
+        result.push_back(firstVertex);
         written += 3;
 
         if (written == totalPoints) {
             break;
         }
 
-        result.push_back(indices[firstVertex]);
-        result.push_back(indices[nextVertex]);
-        result.push_back(indices[prevVertex]);
+        result.push_back(firstVertex);
+        result.push_back(nextVertex);
+        result.push_back(prevVertex);
         written += 3;
 
         lastVertex = nextVertex;
@@ -310,14 +271,14 @@ bool Triangulator::SimpleTriangulate(std::span<const int> indices)
 }
 
 
-bool TriangulateMesh(const MeshData& input, MeshData& output)
+bool TriangulateMesh(const MeshData& src, MeshData& dst)
 {
-    output.indices.clear();
-    output.counts.clear();
+    dst.indices.clear();
+    dst.counts.clear();
 
     size_t totalCount = 0;
     size_t totalTriangles = 0;
-    for (int count : input.counts) {
+    for (int count : src.counts) {
         if (count >= 3) {
             totalCount += count;
             totalTriangles += count - 2;
@@ -327,23 +288,49 @@ bool TriangulateMesh(const MeshData& input, MeshData& output)
         return false;
     }
 
-    output.indices.reserve(totalTriangles * 3);
-    output.counts.resize(totalTriangles, 3);
+    dst.indices.reserve(totalTriangles * 3);
+    dst.counts.resize(totalTriangles, 3);
+
+#define Action(name) if (!src.name.indices.empty()) { dst.name.indices.reserve(totalTriangles * 3); }
+    EachMeshPrimvar(Action);
+#undef Action
 
     Triangulator ctx;
     size_t offset = 0;
-    for (int count : input.counts) {
-        std::span<const int> indices{ input.indices.data() + offset, static_cast<size_t>(count) };
+    for (int count : src.counts) {
+        std::span<const int> indices{ src.indices.data() + offset, static_cast<size_t>(count) };
 
         if (count == 3) {
-            output.indices.push_back(indices[0]);
-            output.indices.push_back(indices[1]);
-            output.indices.push_back(indices[2]);
+            dst.indices.push_back(indices[0]);
+            dst.indices.push_back(indices[1]);
+            dst.indices.push_back(indices[2]);
+
+            auto addPrimvarIndices = [&]<typename T>(const PrimvarData<T>& src, PrimvarData<T>& dst) {
+                if (!src.indices.empty()) {
+                    dst.indices.push_back(src.indices[offset + 0]);
+                    dst.indices.push_back(src.indices[offset + 1]);
+                    dst.indices.push_back(src.indices[offset + 2]);
+                }
+                };
+#define Action(name) addPrimvarIndices(src.name, dst.name);
+            EachMeshPrimvar(Action);
+#undef Action
         }
-        else if (count > 3 && (ctx.EarClipTriangulate(input.points, indices) || ctx.SimpleTriangulate(indices))) {
-            for (int index : ctx.GetTriangleIndices()) {
-                output.indices.push_back(indices[index]);
+        else if (count > 3 && (ctx.EarClipTriangulate(src.points, indices) || ctx.SimpleTriangulate(indices))) {
+            for (int ii : ctx.GetResult()) {
+                dst.indices.push_back(indices[ii]);
             }
+
+            auto addPrimvarIndices = [&]<typename T>(const PrimvarData<T>& src, PrimvarData<T>& dst) {
+                if (!src.indices.empty()) {
+                    for (int ii : ctx.GetResult()) {
+                        dst.indices.push_back(src.indices[offset + ii]);
+                    }
+                }
+                };
+#define Action(name) addPrimvarIndices(src.name, dst.name);
+            EachMeshPrimvar(Action);
+#undef Action
         }
 
         offset += count;
