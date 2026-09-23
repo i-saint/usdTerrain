@@ -5,7 +5,6 @@ constexpr int kMaxUvSets = 4;
 template<typename T>
 struct PrimvarData
 {
-    TfToken name;
     VtArray<int> indices;
     VtArray<T> values;
 };
@@ -51,6 +50,5 @@ private:
 };
 
 
-// 三角形化。dst は indices と counts のみ出力される (indices を持つ primvar はそれも dst 側に出力される) 
-// line / point は無視される
+// 三角形化。line / point は無視される
 bool TriangulateMesh(const MeshData& src, MeshData& dst);

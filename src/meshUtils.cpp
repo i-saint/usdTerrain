@@ -273,62 +273,104 @@ bool Triangulator::SimpleTriangulate(std::span<const int> indices)
 
 bool TriangulateMesh(const MeshData& src, MeshData& dst)
 {
-    dst.indices.clear();
-    dst.counts.clear();
-
     size_t totalCount = 0;
     size_t totalTriangles = 0;
     for (int count : src.counts) {
-        if (count >= 3) {
+        // count == 1 (points), count == 2 (lines) は無視
+        if (count <= 0) {
+            return false;
+        }
+        else if (count >= 3) {
             totalCount += count;
             totalTriangles += count - 2;
         }
     }
+
     if (totalTriangles == 0) {
         return false;
     }
+    else if (totalTriangles == src.counts.size() && totalCount == src.indices.size()) {
+        // 既に全て三角形
+        dst = src;
+        return true;
+    }
 
+    VtArray<int> baseIndices = src.indices;
+    VtArray<float3> basePoints = src.points;
+    if (baseIndices.empty()) {
+        baseIndices.resize(src.points.size(), [](int* begin, int* end) { std::iota(begin, end, 0); });
+    }
+
+    dst.indices.clear();
     dst.indices.reserve(totalTriangles * 3);
+    dst.counts.clear();
     dst.counts.resize(totalTriangles, 3);
+    dst.points = basePoints;
 
-#define Action(name) if (!src.name.indices.empty()) { dst.name.indices.reserve(totalTriangles * 3); }
+    auto initializePrimvar = [&]<typename T>(const PrimvarData<T>&srcPV, PrimvarData<T>&dstPV) {
+        dstPV.indices.clear();
+        dstPV.values.clear();
+
+        if (!srcPV.indices.empty()) {
+            dstPV.indices.reserve(totalTriangles * 3);
+            dstPV.values = srcPV.values;
+        }
+        else if (srcPV.values.size() == basePoints.size()) {
+            dstPV.values = srcPV.values;
+        }
+        else if (srcPV.values.size() == baseIndices.size()) {
+            dstPV.values.reserve(totalTriangles * 3);
+        }
+    };
+#define Action(name) initializePrimvar(src.name, dst.name);
     EachMeshPrimvar(Action);
 #undef Action
 
     Triangulator ctx;
     size_t offset = 0;
     for (int count : src.counts) {
-        std::span<const int> indices{ src.indices.data() + offset, static_cast<size_t>(count) };
+        std::span<const int> indices{ baseIndices.data() + offset, static_cast<size_t>(count) };
 
         if (count == 3) {
-            dst.indices.push_back(indices[0]);
-            dst.indices.push_back(indices[1]);
-            dst.indices.push_back(indices[2]);
+            for (int i = 0; i < 3; ++i) {
+                dst.indices.push_back(indices[i]);
+            }
 
-            auto addPrimvarIndices = [&]<typename T>(const PrimvarData<T>& src, PrimvarData<T>& dst) {
-                if (!src.indices.empty()) {
-                    dst.indices.push_back(src.indices[offset + 0]);
-                    dst.indices.push_back(src.indices[offset + 1]);
-                    dst.indices.push_back(src.indices[offset + 2]);
+            auto triangulatePrimvar = [&]<typename T>(const PrimvarData<T>&srcPV, PrimvarData<T>&dstPV) {
+                if (!srcPV.indices.empty()) {
+                    for (int i = 0; i < 3; ++i) {
+                        dstPV.indices.push_back(srcPV.indices[offset + i]);
+                    }
                 }
-                };
-#define Action(name) addPrimvarIndices(src.name, dst.name);
+                else if (srcPV.values.size() == baseIndices.size() && !dstPV.values.IsIdentical(srcPV.values)) {
+                    for (int i = 0; i < 3; ++i) {
+                        dstPV.values.push_back(srcPV.values[offset + i]);
+                    }
+                }
+            };
+#define Action(name) triangulatePrimvar(src.name, dst.name);
             EachMeshPrimvar(Action);
 #undef Action
         }
-        else if (count > 3 && (ctx.EarClipTriangulate(src.points, indices) || ctx.SimpleTriangulate(indices))) {
-            for (int ii : ctx.GetResult()) {
+        else if (count > 3 && (ctx.EarClipTriangulate(basePoints, indices) || ctx.SimpleTriangulate(indices))) {
+            std::span<const int> triangulated = ctx.GetResult();
+            for (int ii : triangulated) {
                 dst.indices.push_back(indices[ii]);
             }
 
-            auto addPrimvarIndices = [&]<typename T>(const PrimvarData<T>& src, PrimvarData<T>& dst) {
-                if (!src.indices.empty()) {
-                    for (int ii : ctx.GetResult()) {
-                        dst.indices.push_back(src.indices[offset + ii]);
+            auto triangulatePrimvar = [&]<typename T>(const PrimvarData<T>&srcPV, PrimvarData<T>&dstPV) {
+                if (!srcPV.indices.empty()) {
+                    for (int ii : triangulated) {
+                        dstPV.indices.push_back(srcPV.indices[offset + ii]);
                     }
                 }
-                };
-#define Action(name) addPrimvarIndices(src.name, dst.name);
+                else if (srcPV.values.size() == baseIndices.size() && !dstPV.values.IsIdentical(srcPV.values)) {
+                    for (int ii : triangulated) {
+                        dstPV.values.push_back(srcPV.values[offset + ii]);
+                    }
+                }
+            };
+#define Action(name) triangulatePrimvar(src.name, dst.name);
             EachMeshPrimvar(Action);
 #undef Action
         }
