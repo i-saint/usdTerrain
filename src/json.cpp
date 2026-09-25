@@ -152,4 +152,51 @@ ARCH_EXPORT void TestExtractJsonFields()
         assert(ExtractJsonFields(root, Field("f", value)) == 1);
         assert(value == 1.25f);
     }
+
+    {
+        simdjson::ondemand::parser parser;
+        auto json = simdjson::padded_string(std::string_view(
+            R"({"obj":{"inner":9},"arr":[2,4,6],"s":"callback","b":true,"i":-5,"f":2.5,"ei":7})"));
+        simdjson::ondemand::document doc;
+        assert(parser.iterate(json).get(doc) == simdjson::SUCCESS);
+
+        JsonObject root;
+        assert(doc.get_object().get(root) == simdjson::SUCCESS);
+
+        int objectInner = 0;
+        int arraySum = 0;
+        std::string str;
+        bool booleanValue = false;
+        int intValue = 0;
+        float floatValue = 0.0f;
+        TestEnum enumInvokedValue = TestEnum::None;
+
+        const int extracted = ExtractJsonFields(
+            root,
+            Field("obj", [&](JsonObject v) {
+                assert(ExtractJsonFields(v, Field("inner", objectInner)) == 1);
+            }),
+            Field("arr", [&](JsonArray v) {
+                for (auto item : v) {
+                    int tmp = 0;
+                    assert(item.get_int32().get(tmp) == simdjson::SUCCESS);
+                    arraySum += tmp;
+                }
+            }),
+            Field("s", [&](std::string_view v) { str = std::string(v); }),
+            Field("b", [&](bool v) { booleanValue = v; }),
+            Field("i", [&](int v) { intValue = v; }),
+            Field("f", [&](float v) { floatValue = v; }),
+            Field("ei", [&](TestEnum v) { enumInvokedValue = v; })
+        );
+
+        assert(extracted == 7);
+        assert(objectInner == 9);
+        assert(arraySum == 12);
+        assert(str == "callback");
+        assert(booleanValue);
+        assert(intValue == -5);
+        assert(floatValue == 2.5f);
+        assert(enumInvokedValue == TestEnum::Value);
+    }
 }
