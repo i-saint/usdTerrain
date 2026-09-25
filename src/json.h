@@ -4,6 +4,8 @@
 #include <tuple>
 #include <type_traits>
 #include <functional>
+#include <array>
+#include <utility>
 #include <simdjson/simdjson.h>
 
 using JsonValue = simdjson::ondemand::value;
@@ -81,28 +83,13 @@ inline decltype(auto) Field(std::string_view name, T&& value)
 template<class... Args>
 inline int ExtractJsonFields(JsonObject json, Args&&... args)
 {
-    auto handle = []<class T>(std::string_view k, JsonValue v, std::tuple<std::string_view, T> && f) -> bool
+    auto handle = []<class T>(std::string_view k, JsonValue v, const std::tuple<std::string_view, T>&f) -> bool
     {
         if (k != std::get<0>(f))
             return false;
 
         using ValueType = std::remove_pointer_t<T>;
-        if constexpr (std::is_same_v<T, JsonValue*>) {
-            *std::get<1>(f) = v;
-            return true;
-        }
-        //// ondemand だと parser が処理を進めるとそれ以前の JsonObject や JsonArray の内容が無効になるので、invoker のみ許可する
-        //else if constexpr (std::is_same_v<T, JsonObject*>) {
-        //    if (v.get_object().get(*std::get<1>(f)) == simdjson::SUCCESS) {
-        //        return true;
-        //    }
-        //}
-        //else if constexpr (std::is_same_v<T, JsonArray*>) {
-        //    if (v.get_array().get(*std::get<1>(f)) == simdjson::SUCCESS) {
-        //        return true;
-        //    }
-        //}
-        else if constexpr (std::is_same_v<T, std::string*>) {
+        if constexpr (std::is_same_v<T, std::string*>) {
             std::string_view tmp;
             if (v.get_string().get(tmp) == simdjson::SUCCESS) {
                 *std::get<1>(f) = std::string(tmp);
@@ -133,6 +120,17 @@ inline int ExtractJsonFields(JsonObject json, Args&&... args)
                 return true;
             }
         }
+        //// ondemand だと parser が処理を進めるとそれ以前の JsonObject や JsonArray の内容が無効になるので、これらは invoker のみ許可する
+        //else if constexpr (std::is_same_v<T, JsonObject*>) {
+        //    if (v.get_object().get(*std::get<1>(f)) == simdjson::SUCCESS) {
+        //        return true;
+        //    }
+        //}
+        //else if constexpr (std::is_same_v<T, JsonArray*>) {
+        //    if (v.get_array().get(*std::get<1>(f)) == simdjson::SUCCESS) {
+        //        return true;
+        //    }
+        //}
         else if constexpr (detail::is_unary_invocable_v<T>) {
             using ArgType = std::remove_cvref_t<detail::unary_arg_t<T>>;
 
@@ -188,24 +186,35 @@ inline int ExtractJsonFields(JsonObject json, Args&&... args)
         return false;
     };
 
-    int r = 0;
+    auto handlers = std::make_tuple(std::forward<Args>(args)...);
+    // 一度呼んだハンドラは以後呼ばないようにするためのフラグ
+    std::array<bool, sizeof...(Args)> done{};
+
+    std::string_view key;
+    JsonValue val;
+    int ret = 0;
     for (auto field : json) {
-        std::string_view k;
-        if (field.unescaped_key().get(k) != simdjson::SUCCESS) {
+        if (field.unescaped_key().get(key) != simdjson::SUCCESS ||
+            field.value().get(val) != simdjson::SUCCESS) {
             continue;
         }
 
-        JsonValue v;
-        if (field.value().get(v) != simdjson::SUCCESS) {
-            continue;
-        }
+        bool handled = false;
+        [&] <size_t... I>(std::index_sequence<I...>) {
+            ([&]() {
+                if (!handled && !done[I] && handle(key, val, std::get<I>(handlers))) {
+                    // ハンドリングされたのでフラグを立てて以後呼ばないようにする
+                    handled = done[I] = true;
+                    ++ret;
+                }
+                }(), ...);
+        }(std::make_index_sequence<sizeof...(Args)>{});
 
-        bool handled = (handle(k, v, std::forward<Args>(args)) || ...);
-        if (handled) {
-            ++r;
+        if (ret == sizeof...(Args)) {
+            break;
         }
     }
-    return r;
+    return ret;
 }
 
 template<class... Args>

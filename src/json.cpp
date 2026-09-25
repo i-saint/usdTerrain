@@ -19,23 +19,6 @@ ARCH_EXPORT void TestExtractJsonFields()
 
     {
         simdjson::ondemand::parser parser;
-        auto json = simdjson::padded_string(std::string_view(R"({"value":42})"));
-        simdjson::ondemand::document doc;
-        check(parser.iterate(json).get(doc) == simdjson::SUCCESS);
-
-        JsonObject root;
-        check(doc.get_object().get(root) == simdjson::SUCCESS);
-
-        JsonValue value;
-        check(ExtractJsonFields(root, Field("value", value)) == 1);
-
-        int32_t extractedValue = 0;
-        check(value.get_int32().get(extractedValue) == simdjson::SUCCESS);
-        check(extractedValue == 42);
-    }
-
-    {
-        simdjson::ondemand::parser parser;
         auto json = simdjson::padded_string(std::string_view(R"({"object":{"inner":11}})"));
         simdjson::ondemand::document doc;
         check(parser.iterate(json).get(doc) == simdjson::SUCCESS);
