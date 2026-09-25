@@ -38,6 +38,12 @@
     <ClInclude Include="meshUtils.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\externals\simdjson\simdjson.h">
+      <Filter>externals</Filter>
+    </ClInclude>
+    <ClInclude Include="json.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -65,6 +71,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="meshUtils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\externals\simdjson\simdjson.cpp">
+      <Filter>externals</Filter>
+    </ClCompile>
+    <ClCompile Include="json.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

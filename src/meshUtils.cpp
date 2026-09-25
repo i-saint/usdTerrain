@@ -286,7 +286,7 @@ bool TriangulateMesh(const MeshData& src, MeshData& dst)
         }
     }
 
-    if (totalTriangles == 0) {
+    if (totalTriangles == 0 || totalCount > src.indices.size()) {
         return false;
     }
     else if (totalTriangles == src.counts.size() && totalCount == src.indices.size()) {

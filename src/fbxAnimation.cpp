@@ -1,6 +1,6 @@
 ﻿#include "pch.h"
 #include "fbxAnimation.h"
-#include <ufbx.h>
+#include <ufbx/ufbx.h>
 
 #include <algorithm>
 #include <cstring>
